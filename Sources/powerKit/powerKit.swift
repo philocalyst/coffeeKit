@@ -64,3 +64,27 @@ public actor CoffeeKit {
 		case invalidPID(pid: pid_t)
 	}
 
+	// MARK: - Actor State (Protected)
+
+	// Class state
+	private var activeAssertions: [AssertionType: IOPMAssertionID] = [:]
+	private let assertionReason: String
+	private let assertionTypes: Set<AssertionType>
+	private let timeout: TimeInterval?
+	private var watchedPID: pid_t?
+
+	// kqueue related properties
+	private var kqueueDescriptor: CInt = -1
+	private var kqueueShutdownPipe: (read: CInt, write: CInt) = (-1, -1)
+	private var isWatchingPID: Bool = false
+	private var processWatchingTask: Task<Void, Never>?  // Task handle for kqueue monitoring
+
+	// Logger instance - initialized in init
+	private let logger: Logger
+
+	public var isActive: Bool {
+		return !activeAssertions.isEmpty || isWatchingPID
+	}
+
+	public var terminationHandler: (@Sendable (CoffeeKit) -> Void)?
+
