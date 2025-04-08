@@ -297,3 +297,14 @@ public actor CoffeeKit {
 		}
 	}
 
+	/// Releases a specific power assertion.
+	private func releaseAssertion(id: IOPMAssertionID) {
+		guard id != IOPMAssertionID(0) else { return }
+		let status = IOPMAssertionRelease(id)
+		if status != kIOReturnSuccess {
+			logger.error(
+				"Error releasing assertion ID \(id): \(kernelReturnStatusString(status)) (\(status))"
+			)
+		}
+	}
+
