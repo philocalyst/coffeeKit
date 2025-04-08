@@ -119,3 +119,25 @@ public actor CoffeeKit {
 		}
 	}
 
+	deinit {
+		logger.debug("NativeCaffeinator deinit: Scheduling async stop task.")
+
+		// Capture the logger instance along with weak self for the detached task
+		let capturedLogger = self.logger
+		Task.detached { [weak self, capturedLogger] in  // Capture logger by value
+			// Check if the actor instance still exists when the task actually executes.
+			if let strongSelf = self {
+				// If the actor still exists, call its stop method.
+				await strongSelf.stop()
+				// Use the logger captured by the task
+				capturedLogger.debug("NativeCaffeinator deinit task completed stop().")
+			} else {
+				// The actor was deallocated before this task could call stop.
+				// Log using the captured logger.
+				capturedLogger.warning(
+					"NativeCaffeinator deallocated before deinit task could run stop(). Explicit stop() call is recommended for guaranteed cleanup."
+				)
+			}
+		}
+	}
+
