@@ -86,6 +86,10 @@ public actor CoffeeKit {
 		return !activeAssertions.isEmpty || isWatchingPID
 	}
 
+	public var activeAssertionTypes: Set<AssertionType> {
+		return Set(activeAssertions.keys)
+	}
+
 	public var terminationHandler: (@Sendable (CoffeeKit) -> Void)?
 
 	public init(
