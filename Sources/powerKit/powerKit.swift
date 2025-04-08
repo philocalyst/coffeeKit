@@ -314,3 +314,155 @@ public actor CoffeeKit {
 		return kill(pid, 0) == 0 || errno == EPERM
 	}
 
+	// MARK: - Kqueue Process Watching Implementation (Actor Internal)
+
+	/// Sets up kqueue/pipes and starts the background monitoring Task.
+	private func startWatchingPID(_ pid: pid_t) throws {
+		// Ensure previous task is cleaned up if any (shouldn't happen if isActive is checked, but you never know!!)
+		if processWatchingTask != nil {
+			logger.debug("Stopping existing watcher task before starting new one.")
+			stopWatchingPIDInternal()
+		}
+
+		// Shutdown pipe
+		var pipeFileDescriptors = [Int32](repeating: -1, count: 2)
+		let result = pipe(&pipeFileDescriptors)
+
+		guard result == 0 else {
+			let errorString = String(cString: strerror(errno))
+			logger.error("Pipe creation failed: \(errorString)")
+			throw CaffeinationError.pipeCreationFailed(error: errorString)
+		}
+
+		// Assign immediately to actor state
+		self.kqueueShutdownPipe = (pipeFileDescriptors[0], pipeFileDescriptors[1])
+
+		// Writing ending
+		let flags = fcntl(self.kqueueShutdownPipe.write, F_GETFL)
+		guard flags != -1 else {
+			let errorStr = String(cString: strerror(errno))
+			let fullErrorDesc = "F_GETFL: \(errorStr)"
+			logger.error("fcntl failed: \(fullErrorDesc)")
+			closePipeFDs()  // Clean up pipe
+			throw CaffeinationError.fcntlFailed(error: fullErrorDesc)
+		}
+		let fcntlResult = fcntl(self.kqueueShutdownPipe.write, F_SETFL, flags | O_NONBLOCK)
+		guard fcntlResult != -1 else {
+			let errorStr = String(cString: strerror(errno))
+			let fullErrorDesc = "F_SETFL O_NONBLOCK: \(errorStr)"
+			logger.error("fcntl failed: \(fullErrorDesc)")
+			closePipeFDs()  // Clean up pipe
+			throw CaffeinationError.fcntlFailed(error: fullErrorDesc)
+		}
+
+		let kq = kqueue()
+		guard kq != -1 else {
+			let errorStr = String(cString: strerror(errno))
+			logger.error("kqueue creation failed: \(errorStr)")
+			closePipeFDs()  // Clean up pipe
+			throw CaffeinationError.kqueueCreationFailed(error: errorStr)
+		}
+		self.kqueueDescriptor = kq
+
+		// kevents configuration
+		let processEvent = kevent(
+			ident: UInt(pid), filter: Int16(EVFILT_PROC),
+			flags: UInt16(EV_ADD | EV_ENABLE | EV_ONESHOT), fflags: UInt32(NOTE_EXIT), data: 0,
+			udata: nil)
+		let pipeEvent = kevent(
+			ident: UInt(self.kqueueShutdownPipe.read), filter: Int16(EVFILT_READ),
+			flags: UInt16(EV_ADD | EV_ENABLE), fflags: 0, data: 0, udata: nil)
+
+		// Register possible events
+		let eventsToRegister = [processEvent, pipeEvent]
+		let registerResult = kevent(
+			kq,
+			eventsToRegister,
+			Int32(eventsToRegister.count),
+			nil,
+			0,
+			nil)
+
+		guard registerResult != -1 else {
+			let errorStr = String(cString: strerror(errno))
+			logger.error("kqueue event registration failed: \(errorStr)")
+			// Cleanup
+			closeKQueueFD()
+			closePipeFDs()
+			throw CaffeinationError.kqueueEventRegistrationFailed(error: errorStr)
+		}
+
+		// Welcome to monitoring of kqs!
+		let capturedKQ = self.kqueueDescriptor
+		let capturedPipeReadFD = self.kqueueShutdownPipe.read
+		let capturedPID = pid
+		// Capture logger instance for the task
+		let capturedLogger = self.logger
+
+		self.processWatchingTask = Task.detached(priority: .utility) {
+			[weak self, capturedLogger] in  // Capture logger
+			guard let actorInstance = self else {
+				// Use captured logger
+				capturedLogger.info(
+					"NativeCaffeinator actor deallocated before kqueue task could run.")
+				// Best effort cleanup of captured FDs if actor is gone
+				if capturedKQ != -1 { close(capturedKQ) }
+				if capturedPipeReadFD != -1 { close(capturedPipeReadFD) }
+				return
+			}
+			// Pass captured logger to the loop function
+			await actorInstance.runKqueueMonitorLoop(
+				kq: capturedKQ, pipeReadFD: capturedPipeReadFD, watchedPID: capturedPID,
+				taskLogger: capturedLogger)
+		}
+		logger.debug("Kqueue monitoring task started.")  // Log using instance logger
+	}
+
+	/// Stops the kqueue monitoring task and cleans up related resources. (Synchronous internal helper)
+	private func stopWatchingPIDInternal() {
+		guard let task = processWatchingTask else {
+			logger.debug("stopWatchingPIDInternal called but no task found.")
+			return  // No task to stop
+		}
+
+		logger.debug("Stopping kqueue monitoring task...")
+
+		// 1. Cancel the Task
+		task.cancel()
+		self.processWatchingTask = nil  // Remove reference to allow task cleanup
+
+		// 2. Signal via Pipe (to potentially unblock kevent immediately)
+		let pipeWriteFD = self.kqueueShutdownPipe.write
+		if pipeWriteFD != -1 {
+			let dummy: UInt8 = 0
+			_ = write(pipeWriteFD, [dummy], 1)  // Best effort signal
+			// Write end is closed below
+		}
+
+		// 3. Close File Descriptors (this will also cause kevent to fail in the task)
+		closeKQueueFD()
+		closePipeFDs()
+
+		logger.debug("Kqueue monitoring resources cleaned up.")
+	}
+
+	/// Closes the kqueue descriptor if open.
+	private func closeKQueueFD() {
+		if kqueueDescriptor != -1 {
+			close(kqueueDescriptor)
+			kqueueDescriptor = -1
+		}
+	}
+
+	/// Closes both pipe file descriptors if open.
+	private func closePipeFDs() {
+		if kqueueShutdownPipe.read != -1 {
+			close(kqueueShutdownPipe.read)
+			kqueueShutdownPipe.read = -1
+		}
+		if kqueueShutdownPipe.write != -1 {
+			close(kqueueShutdownPipe.write)
+			kqueueShutdownPipe.write = -1
+		}
+	}
+
