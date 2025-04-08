@@ -308,3 +308,9 @@ public actor CoffeeKit {
 		}
 	}
 
+	/// Checks if a process with the given PID is running.
+	private func isProcessRunning(pid: pid_t) -> Bool {
+		errno = 0  // Reset errno before calling kill
+		return kill(pid, 0) == 0 || errno == EPERM
+	}
+
