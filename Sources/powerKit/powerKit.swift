@@ -88,3 +88,34 @@ public actor CoffeeKit {
 
 	public var terminationHandler: (@Sendable (CoffeeKit) -> Void)?
 
+	public init(
+		reason: String,
+		types: Set<AssertionType> = [.preventSystemIdleSleep, .preventDisplaySleep],
+		timeout: TimeInterval? = nil,
+		watchPID: pid_t? = nil
+	) {
+		self.assertionReason = reason
+		self.assertionTypes = types
+		self.timeout = timeout
+
+		// Set up the instance logger
+		var baseLogger = Logger(
+			label: (Bundle.main.bundleIdentifier ?? "com." + maintainer + "." + libName))
+
+		// Spice some metadata on!
+		baseLogger[metadataKey: "reason"] = .string(reason)
+		if let pid = watchPID {
+			baseLogger[metadataKey: "watchedPIDOnInit"] = .stringConvertible(pid)
+		}
+		self.logger = baseLogger
+
+		// Validate PID during init
+		if let pid = watchPID, pid <= 0 {
+			// Must use the init logger
+			self.logger.error("Invalid PID provided: \(pid). Process watching will be disabled.")
+			self.watchedPID = nil
+		} else {
+			self.watchedPID = watchPID
+		}
+	}
+
