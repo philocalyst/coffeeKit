@@ -564,3 +564,25 @@ public actor CoffeeKit {
 	}
 }
 
+// MARK: - Helper Functions (Global or Static)
+
+// Provides a "human-readable" (HEAVY QUOTES) string for annoying XNU kernel return codes (Mach errors).
+private func kernelReturnStatusString(_ status: kern_return_t) -> String {
+	// Use mach_error_string for Mach kernel errors
+	if let cString = mach_error_string(status) {
+		// Ensure the string is valid before returning
+		let str = String(cString: cString)
+		if !str.isEmpty {
+			return str
+		}
+	}
+	// Fallback for POSIX/BSD errors or if mach_error_string fails
+	if let cString = strerror(status) {
+		let str = String(cString: cString)
+		if !str.isEmpty && str != "Unknown error: \(status)" {  // strerror might return this
+			return str
+		}
+	}
+	// Absolute fallback
+	return "Unknown Error Code \(status)"
+}
