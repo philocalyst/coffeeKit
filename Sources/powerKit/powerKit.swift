@@ -466,3 +466,87 @@ public actor CoffeeKit {
 		}
 	}
 
+	/// The actual kqueue monitoring loop, run by the detached Task.
+	/// Accepts the logger instance to use.
+	private func runKqueueMonitorLoop(
+		kq: CInt, pipeReadFD: CInt, watchedPID: pid_t, taskLogger: Logger
+	) async {
+		// Use the passed-in logger for all logging within this task loop
+		taskLogger.debug(
+			"kqueue monitor loop started.",
+			metadata: ["kq": .stringConvertible(kq), "pipe_read": .stringConvertible(pipeReadFD)])
+
+		var triggeredEvent = kevent()
+		var keepMonitoring = true
+
+		while keepMonitoring && !Task.isCancelled {
+			// Blocking call to wait for events (process exit OR pipe read)
+			// Add a timeout (e.g., 1 second) to allow periodic Task.isCancelled checks
+			var timeoutSpec = timespec(tv_sec: 1, tv_nsec: 0)
+			let eventCount = kevent(kq, nil, 0, &triggeredEvent, 1, &timeoutSpec)
+
+			if Task.isCancelled {
+				taskLogger.debug("kqueue monitor loop detected cancellation.")
+				keepMonitoring = false
+				break  // Exit loop immediately on cancellation
+			}
+
+			if eventCount > 0 {
+				// Event received
+				if triggeredEvent.filter == Int16(EVFILT_PROC)
+					&& (triggeredEvent.fflags & NOTE_EXIT) != 0
+				{
+					taskLogger.info(
+						"Detected exit of watched process.",
+						metadata: ["pid": .stringConvertible(triggeredEvent.ident)])
+					// Call back into the actor to handle the stop logic
+					await self.handleProcessExit()  // Let the actor handle state changes and cleanup
+					keepMonitoring = false  // Stop monitoring after process exit
+				} else if triggeredEvent.filter == Int16(EVFILT_READ)
+					&& triggeredEvent.ident == UInt(pipeReadFD)
+				{
+					taskLogger.debug("kqueue monitor loop received shutdown signal via pipe.")
+					keepMonitoring = false  // Stop monitoring on shutdown signal
+				} else {
+					// Unexpected event
+					taskLogger.debug(
+						"kqueue monitor loop woke up for unexpected event.",
+						metadata: [
+							"filter": .stringConvertible(triggeredEvent.filter),
+							"flags": .stringConvertible(triggeredEvent.flags),
+							"fflags": .stringConvertible(triggeredEvent.fflags),
+							"ident": .stringConvertible(triggeredEvent.ident),
+						])
+					// Continue monitoring unless it's an error
+				}
+			} else if eventCount == 0 {
+				// Timeout occurred, loop will check Task.isCancelled and continue
+				continue
+			} else {  // eventCount == -1 (Error)
+				let errorNum = errno
+				if errorNum == EBADF {
+					// Expected when FDs are closed by stopWatchingPIDInternal
+					taskLogger.debug(
+						"kqueue monitor loop kevent failed (EBADF), likely intentional shutdown.")
+				} else if errorNum == EINTR {
+					// Interrupted by a signal, safe to continue
+					taskLogger.debug("kqueue monitor loop kevent interrupted (EINTR), continuing.")
+					continue
+				} else {
+					// Unexpected error
+					taskLogger.error(
+						"kqueue monitor loop kevent call failed.",
+						metadata: [
+							"errno": .stringConvertible(errorNum),
+							"description": .string(String(cString: strerror(errorNum))),
+						])
+				}
+				keepMonitoring = false  // Stop monitoring on unhandled error or EBADF
+			}
+		}
+
+		taskLogger.debug(
+			"kqueue monitor loop finished.",
+			metadata: ["kq": .stringConvertible(kq), "watchedPID": .stringConvertible(watchedPID)])
+	}
+
