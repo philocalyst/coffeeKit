@@ -550,3 +550,17 @@ public actor CoffeeKit {
 			metadata: ["kq": .stringConvertible(kq), "watchedPID": .stringConvertible(watchedPID)])
 	}
 
+	/// Called by the monitoring task when the watched process exits. Runs on the actor.
+	private func handleProcessExit() async {
+		logger.debug("Handling process exit within actor.")
+		// Needed check here in case stop was called manually
+		if self.isWatchingPID {
+			logger.info("Process exited, initiating stop.")
+			// Call the main stop method to perform full cleanup
+			await self.stop()
+		} else {
+			logger.debug("Process exited, but watching was already stopped. Ignoring.")
+		}
+	}
+}
+
