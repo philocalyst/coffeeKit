@@ -240,3 +240,60 @@ public actor CoffeeKit {
 		}
 	}
 
+	/// Stops the power assertions and process watching.
+	public func stop() async {
+		guard isActive else {  // Check state within actor
+			logger.debug("Caffeinator already stopped.")
+			return
+		}
+
+		logger.debug("Stopping Caffeinator...")
+
+		// Stop process watching first
+		if isWatchingPID {
+			stopWatchingPIDInternal()  // Stop the task and clean up resources
+			self.isWatchingPID = false  // Update state
+			logger.debug("Stopped watching PID.")
+		}
+
+		// Release all active assertions
+		let assertionCount = activeAssertions.count
+		if assertionCount > 0 {
+			activeAssertions.values.forEach { releaseAssertion(id: $0) }  // Uses logger internally now
+			activeAssertions.removeAll()
+			logger.debug("Released \(assertionCount) assertion(s).")
+		}
+
+		logger.info("Caffeinator stopped.")
+
+		// Call termination handler IF provided
+		terminationHandler?(self)  // Passing actor instance
+	}
+
+	// MARK: - Private Helper Methods (For use within the acteur)
+
+	private func applyTimeout(to assertionID: IOPMAssertionID, type: AssertionType) throws {
+		guard let timeoutValue = timeout, timeoutValue > 0 else { return }
+
+		// AHHH WHY THE PREFIXES WHY WHY WHY TS UGLY
+		let timeoutKey = kIOPMAssertionTimeoutKey as CFString
+		let timeoutActionKey = kIOPMAssertionTimeoutActionKey as CFString
+		let timeoutActionValue = kIOPMAssertionTimeoutActionRelease as CFString
+
+		var success =
+			IOPMAssertionSetProperty(assertionID, timeoutKey, timeoutValue as CFNumber)
+			== kIOReturnSuccess
+		if !success {
+			logger.warning("Failed to set timeout value for \(type.description)")
+		}
+
+		success =
+			IOPMAssertionSetProperty(assertionID, timeoutActionKey, timeoutActionValue)
+			== kIOReturnSuccess
+		if !success {
+			logger.warning("Failed to set timeout action for \(type.description)")
+		} else {  // Only log success if action was set successfully
+			logger.debug("Set timeout \(timeoutValue)s for \(type.description)")
+		}
+	}
+
