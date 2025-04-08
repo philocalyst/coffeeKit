@@ -141,3 +141,102 @@ public actor CoffeeKit {
 		}
 	}
 
+	// MARK: - Public Actor Methods (Require await)
+
+	/// Starts the power assertions and process watching if configured.
+	public func start() async throws {
+		// Check state within the actor's isolated context
+		guard !isActive else {
+			logger.info("Attempted to start an already active Caffeinator.")
+			// throw CaffeinationError.alreadyActive
+			return
+		}
+
+		// Spicy metadata for effective debugging
+		logger.debug(
+			"Starting Caffeinator...",
+			metadata: [
+				"reason": .string(assertionReason),
+				"types": .string(assertionTypes.map { $0.description }.joined(separator: ", ")),
+				"timeout": .stringConvertible(timeout ?? -1),
+				"watchedPID": .stringConvertible(watchedPID ?? -1),
+			])
+
+		var createdIDs: [AssertionType: IOPMAssertionID] = [:]
+
+		do {
+			// Assertion time!! Create based on config ;)
+			for type in assertionTypes {
+				var assertionID: IOPMAssertionID = IOPMAssertionID(0)
+				let status: kern_return_t
+
+				if let ioKitType = type.ioKitAssertionType {
+					status = IOPMAssertionCreateWithName(
+						ioKitType as CFString,  // bruh
+						IOPMAssertionLevel(kIOPMAssertionLevelOn),
+						assertionReason as CFString,
+						&assertionID
+					)
+					guard status == kIOReturnSuccess else {
+						logger.error(
+							"Failed to create assertion \(type.description): \(kernelReturnStatusString(status)) (\(status))"
+						)
+						throw CaffeinationError.assertionCreationFailed(type: type, status: status)
+					}
+					createdIDs[type] = assertionID
+					logger.debug("Created assertion: \(type.description) (ID: \(assertionID))")
+
+					// Apply Timeout if needed
+					try applyTimeout(to: assertionID, type: type)
+
+				} else if type == .declareUserActivity {
+					status = IOPMAssertionDeclareUserActivity(
+						assertionReason as CFString, kIOPMUserActiveLocal, &assertionID)
+					guard status == kIOReturnSuccess else {
+						logger.error(
+							"Failed to declare user activity: \(kernelReturnStatusString(status)) (\(status))"
+						)
+						throw CaffeinationError.userActivityDeclarationFailed(status: status)
+					}
+					createdIDs[type] = assertionID
+					logger.debug("Declared user activity (ID: \(assertionID))")
+				}
+			}
+
+			// Update actor state to reflected new IDs
+			self.activeAssertions = createdIDs
+
+			// Welcome to process watching (if PID provided)
+			if let pid = watchedPID {
+				guard isProcessRunning(pid: pid) else {
+					logger.error("Process with PID \(pid) not found. Cannot start watching.")
+					// Drop assertions before throwing
+					createdIDs.values.forEach { releaseAssertion(id: $0) }
+					self.activeAssertions.removeAll()
+					throw CaffeinationError.processNotFound(pid: pid)
+				}
+				try startWatchingPID(pid)
+				self.isWatchingPID = true
+				logger.debug("Started watching PID \(pid).")
+			}
+
+			logger.info("Caffeinator started successfully.")
+
+		} catch {
+			// If failure, rollback
+			logger.error(
+				"Rolling back Caffeinator start due to error: \(error.localizedDescription)",
+				metadata: ["error_details": .string("\(error)")])
+			// Assertion drop
+			createdIDs.values.forEach { releaseAssertion(id: $0) }  // Uses logger internally now
+			self.activeAssertions.removeAll()  // Ensure state is clean
+
+			// Stop watching if it somehow partially started from the CLI or elsewhere
+			if isWatchingPID {
+				stopWatchingPIDInternal()
+				self.isWatchingPID = false
+			}
+			throw error
+		}
+	}
+
