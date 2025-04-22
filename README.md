@@ -2,7 +2,9 @@
 
 [![Swift Version](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-macOS%2010.15%2B-lightgrey.svg)](https://developer.apple.com/macOS)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Latest Release](https://img.shields.io/github/v/release/philocalyst/coffeeKit?include_prereleases)](https://github.com/philocalyst/coffeeKit/releases) A Swift actor designed for robust management of macOS power assertions.
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Latest Release](https://img.shields.io/github/v/release/philocalyst/coffeeKit?include_prereleases)](https://github.com/philocalyst/coffeeKit/releases)
+
+A Swift library designed for robust management of macOS power assertions.
 
 ## Summary
 
@@ -18,7 +20,7 @@ Key features include:
 
 ## Get Started
 
-Ready to keep things awake? Head over to the [Installation](#installation) section to add `CoffeeKit` to your project.
+Coffee's no killer, head to the [Installation](#installation) section to add `CoffeeKit` to your project.
 
 ## Tutorial
 
@@ -198,4 +200,4 @@ Notable changes are documented in the [CHANGELOG.md](CHANGELOG.md) file.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details. \`\`\`
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
