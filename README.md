@@ -1,8 +1,7 @@
 # Welcome to CoffeeKit
 
-[![Swift Version](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/platform-macOS%2010.15%2B-lightgrey.svg)](https://developer.apple.com/macOS)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Latest Release](https://img.shields.io/github/v/release/philocalyst/coffeeKit?include_prereleases)](https://github.com/philocalyst/coffeeKit/releases)
+[![Swift Version](https://badgen.net/static/Swift/6.0/orange)](https://swift.org)
+[![Platform](https://badgen.net/static/platform/macOS%2010.15+)](https://developer.apple.com/macOS)
 
 A Swift library designed for robust management of macOS power assertions.
 
