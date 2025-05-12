@@ -1,202 +1,225 @@
 # Welcome to CoffeeKit
 
-[![Swift Version](https://badgen.net/static/Swift/6.0/orange)](https://swift.org)
+[![Swift Version](https://badgen.net/static/Swift/6.0/orange)](https://swift.org)  
 [![Platform](https://badgen.net/static/platform/macOS%2010.15+)](https://developer.apple.com/macOS)
 
-A Swift library designed for robust management of macOS power assertions.
+A Swift library for robust, thread-safe management of macOS power assertions using a Swift actor.
 
 ## Summary
 
-`CoffeeKit` provides a modern, safe, and easy-to-use Swift actor (`CoffeeKit`) for interacting with the macOS IOKit Power Management APIs. It allows your application to prevent display sleep, system sleep, or idle sleep with a specific reason.
+`CoffeeKit` provides a modern, safe, and easy-to-use Swift actor for interacting with the macOS IOKit Power Management APIs. It allows your application to prevent display sleep, system sleep, or idle sleep—with optional automatic timeout or process-lifetime monitoring.
 
-Key features include:
-* Creating various power assertion types (e.g., `preventDisplaySleep`, `preventSystemIdleSleep`).
-* Automatically releasing assertions after a specified timeout.
-* Monitoring a specific process ID (`pid_t`) and automatically releasing assertions when that process exits, using efficient `kqueue` notifications.
+Key features:
+* Create any combination of power assertions (e.g. `.preventDisplaySleep`, `.preventSystemIdleSleep`).
+* Automatically release assertions after a specified timeout.
+* Watch a `pid_t` and automatically release assertions when that process exits (using efficient `kqueue` notifications).
 * Built with Swift concurrency (`actor`) for thread safety.
-* Integrated logging using `swift-log`.
+* Integrated logging via `swift-log`.
 * Clear error handling via the `CaffeinationError` enum.
 
 ## Get Started
 
-Coffee's no killer, head to the [Installation](#installation) section to add `CoffeeKit` to your project.
+Ready to keep the system awake? Head to [Installation](#installation) to add `CoffeeKit` to your project.
+
+---
 
 ## Tutorial
 
-Here's a basic example of how to use `CoffeeKit` to prevent idle sleep while your task runs:
+Below are common usage patterns for `CoffeeKit`.
 
 ```swift
-import CoffeeKit
+import coffeeKit
+import Logging
 
 // ▰▰▰ Basic Usage ▰▰▰ //
 func runImportantTask() async {
-    let coffee = CoffeeKit(reason: "Running important background task")
+    let blocker = sleepManager(
+        reason: "Running important background task"
+    )
 
     do {
-        print("Starting task, preventing idle sleep...")
-        try await coffee.start() // Activate assertions
+        print("Starting task, preventing idle sleep…")
+        try await blocker.start()
 
-        print("Task is running. Assertions active: \(await coffee.isActive)")
-        print("Active assertion types: \(await coffee.activeAssertionTypes)")
+        print("Assertions active: \(await blocker.isActive)")
+        print("Types: \(await blocker.activeAssertionTypes)")
 
-        // Simulate your long-running work
+        // Simulate long-running work
         try await Task.sleep(for: .seconds(30))
 
         print("Task finished.")
-
-    } catch let error as CaffeinationError {
-        print("Failed to manage power assertion: \(error)")
-    } catch {
-        print("An unexpected error occurred: \(error)")
+    }
+    catch let error as CaffeinationError {
+        print("Power assertion error: \(error)")
+    }
+    catch {
+        print("Unexpected error: \(error)")
     }
 
-    // Assertions are released automatically when `coffee` goes out of scope (deinit)
-    // or you can explicitly stop them:
-    // await coffee.stop()
-    // print("Assertions stopped manually. Active: \(await coffee.isActive)")
+    // When `blocker` deinitializes or you call `stop()`, 
+    // assertions are released automatically.
+    // await blocker.stop()
 }
+```
 
+```swift
 // ▰▰▰ Usage with Timeout ▰▰▰ //
 func runTaskWithTimeout() async {
-    // Prevent display sleep for 60 seconds max
-    let coffee = CoffeeKit(
+    // Prevent display sleep for up to 60 seconds
+    let blocker = sleepManager(
+        blocks: [.preventDisplaySleep],
         reason: "Quick display activity",
-        types: [.preventDisplaySleep],
-        timeout: 60.0 // Release assertion after 60 seconds
+        timeout: 60.0  // seconds
     )
 
     do {
-        try await coffee.start()
-        print("Display sleep prevented for up to 60 seconds...")
-        // No need to call stop() if timeout is set, unless you finish early
-        // await coffee.stop()
-    } catch {
+        try await blocker.start()
+        print("Display sleep prevented for 60s.")
+        // No need to call stop() unless you finish early
+    }
+    catch {
         print("Error: \(error)")
     }
 }
+```
 
+```swift
 // ▰▰▰ Usage with Process Watching ▰▰▰ //
 func watchProcess(pid: pid_t) async {
-    // Keep system awake only while process 'pid' is running
-    let coffee = CoffeeKit(
-        reason: "Keeping system awake for process \(pid)",
-        types: [.preventSystemIdleSleep],
-        watchPID: pid
+    // Keep system awake only while `pid` runs
+    let blocker = sleepManager(
+        blocks: [.preventSystemIdleSleep],
+        reason: "Keeping system awake for PID \(pid)",
+        watch: pid
     )
 
-    // Optional: Get notified when CoffeeKit stops (e.g., because process ended)
-    await coffee.terminationHandler = { kit in
-        // Note: This runs *after* stop() completes.
-        // Accessing 'kit' properties requires 'await'.
-        Task { // Launch new task if needed from non-async context
-             print("CoffeeKit stopped. Watched PID likely exited.")
+    // Optional: get notified when blocker stops
+    await blocker.terminationHandler = { kit in
+        Task {
+            print("sleepManager stopped; watched PID likely exited.")
         }
     }
 
-
     do {
-        try await coffee.start()
-        print("Watching PID \(pid). System idle sleep prevented.")
-        // CoffeeKit will automatically call stop() when the process exits.
-        // You can also call stop() manually if needed.
-        // await coffee.stop()
-    } catch CaffeinationError.processNotFound(let pid) {
-        print("Error: Process \(pid) was not found or already exited.")
-    } catch {
+        try await blocker.start()
+        print("Watching PID \(pid); system idle sleep prevented.")
+        // blocker.stop() will be called automatically on process exit
+    }
+    catch CaffeinationError.processNotFound(let pid) {
+        print("Process \(pid) not found or already exited.")
+    }
+    catch {
         print("Error: \(error)")
     }
 }
+```
 
+```swift
 // ▰▰▰ Example Execution ▰▰▰ //
 Task {
     await runImportantTask()
     await runTaskWithTimeout()
 
-    // Example: Launch TextEdit and watch its PID
-    let textEditPID: pid_t = 12345 // Just a stand-in number
-    await watchProcess(pid: textEditPID)
-    // Keep the script running to allow watching
+    let somePID: pid_t = 12345
+    await watchProcess(pid: somePID)
+
+    // Keep the Task alive to allow watching
     try? await Task.sleep(for: .seconds(300))
 }
-````
+```
 
-### Configuration
+---
 
-When initializing `CoffeeKit`, you can specify:
+## Configuration
 
-  * `reason`: (String) A human-readable reason for the assertion, visible in tools like Activity Monitor.
-  * `types`: (Set\<`AssertionType`\>) The types of power assertions to create. Defaults to `[.preventSystemIdleSleep, .preventDisplaySleep]`. Available types:
-      * `.preventDisplaySleep`
-      * `.preventSystemIdleSleep`
-      * `.preventSystemSleep` 
-      * `.declareUserActivity`
-      * `.preventUserIdleSleep`
-      * `.preventUserIdleSystemSleep`
-  * `timeout`: (TimeInterval?) Optional duration in seconds after which the assertion(s) should be automatically released. `nil` means no timeout.
-  * `watchPID`: (pid\_t?) Optional process ID to monitor. If provided, `CoffeeKit` will automatically stop assertions when this process terminates. Invalid PIDs (\<= 0) are ignored.
+Initialize `sleepManager` with:
+
+* `blocks`: Set<AssertionType>  
+  The types of assertions to create.  
+  Default: `[.preventSystemIdleSleep, .preventDisplaySleep]`  
+  Available types:
+  - `.preventDisplaySleep`
+  - `.preventSystemIdleSleep`
+  - `.preventSystemSleep`
+  - `.declareUserActivity`
+  - `.preventUserIdleSleep`
+  - `.preventUserIdleSystemSleep`
+* `reason`: String  
+  A human-readable reason for the assertion (visible in Activity Monitor).
+* `timeout`: TimeInterval?  
+  Optional duration in seconds after which assertions are released.  
+  `nil` means no timeout.
+* `watch`: pid_t?  
+  Optional process ID to monitor. If provided and > 0, `sleepManager` will
+  automatically stop assertions when that process terminates.
+
+---
 
 ## Design Philosophy
 
-`CoffeeKit` aims to be:
+* **Safe**: Swift actor guarantees thread-safe access to internal state and IOKit calls.  
+* **Robust**: Reliable process monitoring with `kqueue` + clear `CaffeinationError` cases.  
+* **Modern**: Leverages Swift concurrency (`async`/`await`).  
+* **Clear**: Integrated with `swift-log` for structured logging.  
+* **Resourceful**: Ensures assertions and system resources are always released (via `deinit` or explicit `stop()`).
 
-  * **Safe:** Leverages Swift actors to ensure thread-safe access to internal state and IOKit calls.
-  * **Robust:** Implements reliable process monitoring using `kqueue` and provides specific error types (`CaffeinationError`) for better diagnostics.
-  * **Modern:** Built with modern Swift concurrency (`async`/`await`).
-  * **Clear:** Uses `swift-log` for detailed operational logging.
-  * **Resourceful:** Ensures power assertions and system resources (like file descriptors for `kqueue`) are properly released via `deinit` or explicit `stop()`.
+---
 
 ## Building and Debugging
 
-This project uses the Swift Package Manager.
+This library uses Swift Package Manager.
 
-  * **Build:** Open the `Package.swift` file in Xcode or run `swift build` in the terminal.
-  * **Test:** Run `swift test`
-  * **Debugging:** Use Xcode's debugger or add `swift-log` handlers to view detailed logs.
+* **Build**: `swift build` or open in Xcode.  
+* **Test**: `swift test`  
+* **Debug**: Use Xcode’s debugger or add `swift-log` handlers to inspect logs.
+
+---
 
 ## Installation
 
-`CoffeeKit` is distributed using the Swift Package Manager. To install it into a project, add it as a dependency in your `Package.swift` file:
+Add `CoffeeKit` to your `Package.swift`:
 
 ```swift
 // swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
-    name: "YourProjectName",
-    platforms: [.macOS(.v10_15)], // CoffeeKit requires macOS 10.15+
-    dependencies: [
-        .package(url: "[https://github.com/philocalyst/coffeeKit.git](https://github.com/philocalyst/coffeeKit.git)", from: "0.1.0") // Replace with desired version or branch
-        // Other dependencies...
-    ],
-    targets: [
-        .target(
-            name: "YourTargetName",
-            dependencies: [
-                .product(name: "CoffeeKit", package: "coffeeKit"), // Corrected product name
-                // Other dependencies...
-            ]
-        )
-        // Other targets...
-    ]
+  name: "YourProject",
+  platforms: [.macOS(.v10_15)],
+  dependencies: [
+    .package(
+      url: "https://github.com/philocalyst/CoffeeKit.git",
+      from: "0.1.0"
+    )
+  ],
+  targets: [
+    .target(
+      name: "YourTarget",
+      dependencies: [
+        .product(name: "CoffeeKit", package: "CoffeeKit")
+      ]
+    )
+  ]
 )
 ```
 
-Then, run `swift package update` or `swift package resolve` to fetch the package. Import `CoffeeKit` in your Swift files where needed.
+Run `swift package update` to fetch the package, then `import CoffeeKit` in your code.
+
+---
 
 ## Changelog
 
-Notable changes are documented in the [CHANGELOG.md](CHANGELOG.md) file.
+See [CHANGELOG.md](CHANGELOG.md) for notable changes.
 
 ## Libraries Used
 
-  * [swift-log](https://github.com/apple/swift-log): A Logging API package for Swift.
-  * [swift-testing](https://www.google.com/search?q=https://github.com/apple/swift-testing): (For testing) Modern testing library for Swift.
+* [swift-log](https://github.com/apple/swift-log)  
+* [swift-testing](https://github.com/apple/swift-testing) (for tests)
 
 ## Acknowledgements
 
-  * Inspired by the classic `caffeinate` command-line tool on macOS.
-  * Thanks to the Swift community :)
+Inspired by Apple’s `caffeinate` tool. Thanks to the Swift community!
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License – see [LICENSE](LICENSE) for details.
