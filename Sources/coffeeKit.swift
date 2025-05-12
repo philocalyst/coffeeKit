@@ -33,13 +33,13 @@ public actor CoffeeKit {
   // MARK: - Init / Deinit
 
   public init(
-    reason: String,
-    types: Set<AssertionType> = [.preventSystemIdleSleep, .preventDisplaySleep],
+    reason: String = "Blocking system sleeping and shutdown",
+    blocks: Set<AssertionType> = [.preventSystemIdleSleep, .preventDisplaySleep],
     timeout: TimeInterval? = nil,
     watchPID: pid_t? = nil
   ) {
     self.assertionReason = reason
-    self.assertionTypes = types
+    self.assertionTypes = blocks
     self.timeout = timeout
 
     var baseLogger = Logger(
