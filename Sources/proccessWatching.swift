@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import Logging
 
-extension SleepBlocker {
+extension SleepManager {
   /// Set up kqueue, pipe, and spawn the background monitor.
   func startWatchingPID(_ pid: pid_t) throws {
     if processWatchingTask != nil {
