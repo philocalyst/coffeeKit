@@ -3,7 +3,7 @@ import Foundation
 import IOKit.pwr_mgt
 import Logging
 
-public actor CoffeeKit {
+public actor SleepBlocker {
   // MARK: - Private State
 
   private var activeAssertions: [AssertionType: IOPMAssertionID] = [:]
@@ -20,7 +20,7 @@ public actor CoffeeKit {
 
   internal let logger: Logger
 
-  public var terminationHandler: (@Sendable (CoffeeKit) -> Void)?
+  public var terminationHandler: (@Sendable (SleepBlocker) -> Void)?
 
   public var isActive: Bool {
     !activeAssertions.isEmpty || isWatchingPID
