@@ -33,10 +33,10 @@ public actor SleepBlocker {
   // MARK: - Init / Deinit
 
   public init(
-    reason: String = "Blocking system sleeping and shutdown",
     blocks: Set<AssertionType> = [.preventSystemIdleSleep, .preventDisplaySleep],
+    reason: String = "Blocking system sleeping and shutdown",
     timeout: TimeInterval? = nil,
-    watchPID: pid_t? = nil
+    watch PID: pid_t? = nil
   ) {
     self.assertionReason = reason
     self.assertionTypes = blocks
@@ -47,15 +47,15 @@ public actor SleepBlocker {
         ?? "com.philocalyst.coffeeKit"
     )
     baseLogger[metadataKey: "reason"] = .string(reason)
-    if let pid = watchPID {
+    if let pid = PID {
       baseLogger[metadataKey: "watchedPIDOnInit"] = .stringConvertible(pid)
     }
     self.logger = baseLogger
 
-    if let pid = watchPID, pid > 0 {
+    if let pid = PID, pid > 0 {
       self.watchedPID = pid
-    } else if watchPID != nil {
-      self.logger.error("Invalid PID provided: \(watchPID!). Disabling watch.")
+    } else if PID != nil {
+      self.logger.error("Invalid PID provided: \(PID!). Disabling watch.")
       self.watchedPID = nil
     }
   }
