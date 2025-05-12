@@ -6,6 +6,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.0.0] – 2025-05-12
+
+### Changed
+- Renamed actor type from `CoffeeKit` (and interim alias `SleepBlocker`) to `SleepManager`, updating all references.  
+- Renamed initializer parameters:
+  - `types` → `blocks`
+  - `watchPID` → `watch`
+- Updated `terminationHandler` signature to accept `SleepManager` instances.  
+- Streamlined process-watching API and internal property names (`watchedPID`, `startWatchingPID`, `stopWatchingPIDInternal`).  
+- Updated `Package.swift` (target and product names) to match `SleepManager`.  
+- Switched documentation badges from Shields.io to Badgen.  
+- Overhauled README:
+  - Revised code examples, installation, configuration, and usage sections to reflect the new API.
+
+### Fixed
+- Enforced code-formatting consistency across `AssertionType`, `KernelHelpers`, and other modules.  
+- Corrected minor typos and layout issues in README and source comments.  
+
 ## [0.1.0] – 2025‑04‑22
 
 ### Added
@@ -28,5 +46,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 * Renamed the project and library target from `powerKit` to `coffeeKit`.
 * Refactored the internal codebase by splitting the main `coffeeKit.swift` file into smaller, more focused source files: `AssertionType.swift`, `CaffinationError.swift`, `KernelHelpers.swift`, `coffeeKit.swift`, and `proccessWatching.swift`.
 
-[Unreleased]: https://github.com/philocalyst/coffeeKit/compare/v0.1.0...HEAD
+---
+
+[Unreleased]: https://github.com/philocalyst/coffeeKit/compare/v0.2.0...HEAD  
+[0.2.0]: https://github.com/philocalyst/coffeeKit/compare/v0.1.1...v0.2.0
 [0.1.0]: https://github.com/philocalyst/coffeeKit/tree/b1e0672971ef9e0dd0d9ffb1c6ec9936ded3b5a7
